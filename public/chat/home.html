@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat Application</title>
+    <!-- Add Bootstrap CSS link here -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        /* Add custom CSS styles here if needed */
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-md-6">
+
+                <a href="/chat/group-form" class="btn btn-primary btn-block mb-3">Create Group</a>
+
+                
+                <!-- List of Chats and Groups -->
+                <div class="group-list">
+                    <ul id="group-list-ul"> <!-- Add id to the <ul> element -->
+                    </ul>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div id="invitations-container"></div>
+                <button id="reload-invites" class="btn btn-success">reload</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.10.2/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    
+    <script src="/home.js"></script>
+</body>
+</html>
