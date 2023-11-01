@@ -1,6 +1,8 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken'); 
 const Sequelize = require("sequelize");
+const { uploadFileToS3,retrieveFileFromS3 } = require('./fileUpload');
+
 
 const path = require('path');
 const { 
@@ -24,6 +26,17 @@ function decodeToken(token, secret) {
     }
 }
 
+exports.decodeJwtToken = async (req,res,next) =>{
+    let groupIdToken = req.query.groupId
+    const groupId = decodeToken(groupIdToken,process.env.TOKEN_SECRET_KEY)
+
+    try{
+        res.status(201).json({groupId:groupId});
+    }
+    catch(err){
+        res.status(404)
+    }
+}
 
 exports.getHome = (req,res,next) =>{
     const filePath = path.join(__dirname, '../public/chat/home.html');
@@ -42,8 +55,10 @@ exports.getAddGroup = (req,res,next) =>{
 
 exports.postSendMessage = async (req,res,next) =>{
     try{
-        const { message, groupIdToken } = req.body;
+        const message = req.body.message;
+        const groupIdToken = req.query.groupIdToken
         const userId = req.user.id;
+        const io = req.io
 
         const user = await User.findOne({
             where:{
@@ -51,16 +66,61 @@ exports.postSendMessage = async (req,res,next) =>{
             },
             attributes: ['name'],
         });
+
         const userName = user.name;
         const groupId = decodeToken(groupIdToken, process.env.TOKEN_SECRET_KEY);
 
-        const newMessage = await Message.create({
-            name:userName,
-            message:message,
-            groupId: groupId,
-            userId:userId
-        });
+        let newMessage;
+        if (message) {
+            // If it's text, create the message with the message field
+            newMessage = await Message.create({
+                name: userName,
+                message: message,
+                groupId: groupId,
+                userId: userId
+            });
+        }
+
+        io.emit('new-message', newMessage);
+
         return res.status(201).json(newMessage)
+    }
+    catch(err){
+        return res.status(500).json({Error:"Failed to send the message"});
+    }
+}
+
+exports.postSendFile = async (req,res,next) =>{
+    try{
+        const message = req.body.message;
+        const groupIdToken = req.query.groupIdToken
+        const fileName = req.query.fileName
+        const userId = req.user.id;
+        const io = req.io
+        const file = req.files.image;
+
+        const user = await User.findOne({
+            where:{
+                id:userId
+            },
+            attributes: ['name'],
+        });
+
+        const userName = user.name;
+        const groupId = decodeToken(groupIdToken, process.env.TOKEN_SECRET_KEY);
+        let newMessage;
+
+        newMessage = await Message.create({
+            name: userName,
+            groupId: groupId,
+            userId: userId
+        });
+        const stringId = JSON.stringify(newMessage.id)
+        const fileUrl = await uploadFileToS3(file,fileName,stringId);
+        await newMessage.update({file:fileUrl})
+
+        io.emit('new-file', newMessage);
+        return res.status(201).json({messageId:newMessage.id})
     }
     catch(err){
         return res.status(500).json({Error:"Failed to send the message"});
@@ -118,23 +178,31 @@ exports.getNewMessage = async (req, res, next) => {
 exports.getAllMessages = async (req, res, next) => {
     try {
         const userId = req.user.id;
-        const groupIdToken = req.query.groupId
+        const groupIdToken = req.query.groupId;
         const groupId = decodeToken(groupIdToken, process.env.TOKEN_SECRET_KEY);
 
         let messages = await Message.findAll({
-            where:{
-                groupId:groupId
+            where: {
+                groupId: groupId
             }
         });
 
         // Map the messages to create a new array with sender information
         const messagesWithSender = messages.map((message) => {
             const senderName = message.userId === userId ? "You" : message.name;
-            return {
+            const messageData = {
                 id: message.id,
-                text: message.message,
                 sender: senderName,
             };
+
+            if (message.message === null && message.file) {
+                // If the message is a file, and there is a link in the file column
+                messageData.file = message.file; // Add the file link to the messageData
+            } else {
+                messageData.text = message.message;
+            }
+
+            return messageData;
         });
 
         res.json({ messages: messagesWithSender });
@@ -143,10 +211,34 @@ exports.getAllMessages = async (req, res, next) => {
     }
 };
 
+exports.getMediaFile = async (req,res,next) =>{
+    try{
+        const userId = req.user.id
+        const file = req.query.fileName;
+        const fileName = file.split('/').pop();
+        const response = await retrieveFileFromS3(fileName);
+
+        const message = await Message.findOne({
+            where:{
+                file:file
+            }
+        });
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+        res.send(response);
+    }
+    catch(err){
+        console.log(err)
+        res.status(500).json({message:"Error fetching file"})
+    }
+}
+
 exports.postAddGroup = async (req,res,next) =>{
     try{
         const { groupName, groupMembers } = req.body
         const userId = req.user.id
+        const io = req.io
 
         const response = await Group.create({
             GroupName: groupName,
@@ -162,6 +254,7 @@ exports.postAddGroup = async (req,res,next) =>{
         })
 
         await sendInvite(userId,groupMembers,response.GroupId)
+
         return res.status(201).json({response})
 
     }
@@ -176,8 +269,10 @@ exports.addNewParticipant = async (req,res,next) =>{
         const groupIdToken = req.query.groupId
         const groupId = decodeToken(groupIdToken,process.env.TOKEN_SECRET_KEY)
         const groupMembers = req.body.phoneNumber
+        const io = req.io
 
         await sendInvite(userId,groupMembers,groupId)
+        io.emit('new-invitation');
         return res.status(201).json({response})
     }
     catch(err){
