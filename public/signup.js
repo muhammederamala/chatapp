@@ -8,7 +8,6 @@ async function signup(e){
             password: e.target.password.value,
             phone: e.target.phone.value
         }
-        console.log(signUpDetails)
         const baseURL = window.location.protocol + '//' + window.location.host;
         const response = await axios.post(`${baseURL}/user/signup`,
         signUpDetails)
@@ -30,13 +29,25 @@ async function signup(e){
         }
     }
     catch(err){
-        console.log(err)
+        const responseDiv = document.getElementById('response-message')
+        responseDiv.classList.add('mt-2','alert', 'alert-danger')
+
+        if(err.response.status === 409){
+            responseDiv.textContent = "User with this email already exists"
+        }
+        else{
+            responseDiv.textContent = "Internal server error"
+        }
     }
 }
 
 async function login(e){
     try{
         e.preventDefault()
+        const responseMessageElement = document.getElementById('responseP');
+        if(responseMessageElement){
+            responseMessageElement.remove();
+        }
         const baseURL = window.location.protocol + '//' + window.location.host;
 
         const loginDetails = {
@@ -47,22 +58,58 @@ async function login(e){
         const response = await axios.post(`${baseURL}/user/login`,
         loginDetails)
         
-        if(response.status === 200){
-            console.log("Logged in succesfully")
-            
+        if(response.status === 200){            
             const token = response.data.token;
             localStorage.setItem('Token', token);
 
             window.location.href = `${baseURL}/chat`;
         }
-        else{
-            console.log("Error logging into account")
-            const responseData = response.data;
-            responseMessageElement.textContent = responseData.message;
-            responseMessageElement.style.color = 'red'; 
-        }
+
     }
     catch(err){
-        console.log(err)
+        const responseDiv = document.getElementById('response-message')
+        responseDiv.classList.add('mt-2','alert', 'alert-danger')
+
+        if(err.response.status === 404){
+            responseDiv.textContent = "Account does not exist."
+        }
+        else if(err.response.status === 401){
+            responseDiv.textContent = "Incorrect email or password"
+        }
+        else{
+            responseDiv.textContent = "Internal server error"
+        }
     }
 }
+
+document.addEventListener("DOMContentLoaded", function(){
+    document.getElementById('sign-in').addEventListener('click', (e) =>{
+        chechIfLoggedIn();
+    })
+
+    async function chechIfLoggedIn(){
+        const token = localStorage.getItem("Token")
+        const urlParams = new URLSearchParams(window.location.search);
+        const baseURL = window.location.protocol + '//' + window.location.host;
+        const payload = {
+            token : token,
+        }
+        try{
+            const response = await axios.post(`${baseURL}/check-login`,payload);
+            console.log(response)
+            if(response.status === 200){
+                window.location.href = '/chat'
+            }
+        }
+        catch(err){
+            console.log(err)
+            if(err.response.status === 401){
+                window.location.href = '/user/login'
+            }
+            else if (err.data.status === 500){
+                console.log("Internal server error")
+            }
+        }
+
+    }
+})
